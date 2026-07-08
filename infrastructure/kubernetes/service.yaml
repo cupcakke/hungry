@@ -1,0 +1,236 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+  labels:
+    app: payment-platform
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: payment-platform
+    component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-service
+  labels:
+    app: payment-platform
+    component: worker
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+  selector:
+    app: payment-platform
+    component: worker
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  labels:
+    app: payment-platform
+    component: webhook
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
+      name: http
+  selector:
+    app: payment-platform
+    component: webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+  labels:
+    app: payment-platform
+    component: admin
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8002
+      targetPort: 8002
+      protocol: TCP
+      name: http
+  selector:
+    app: payment-platform
+    component: admin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-headless
+  labels:
+    app: payment-platform
+    component: api
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: payment-platform
+    component: api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: payment-platform-service-account
+  labels:
+    app: payment-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: payment-platform-role
+  labels:
+    app: payment-platform
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: payment-platform-role-binding
+  labels:
+    app: payment-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: payment-platform-role
+subjects:
+  - kind: ServiceAccount
+    name: payment-platform-service-account
+    namespace: default
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment-platform-ingress
+  labels:
+    app: payment-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+    - hosts:
+        - api.payment-platform.io
+        - webhooks.payment-platform.io
+        - admin.payment-platform.io
+      secretName: payment-platform-tls
+  rules:
+    - host: api.payment-platform.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8000
+    - host: webhooks.payment-platform.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webhook-service
+                port:
+                  number: 8001
+    - host: admin.payment-platform.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-service
+                port:
+                  number: 8002
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  labels:
+    app: payment-platform
+    component: api
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: payment-platform
+      component: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-pdb
+  labels:
+    app: payment-platform
+    component: worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-platform
+      component: worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webhook-pdb
+  labels:
+    app: payment-platform
+    component: webhook
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-platform
+      component: webhook
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: admin-pdb
+  labels:
+    app: payment-platform
+    component: admin
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: payment-platform
+      component: admin
